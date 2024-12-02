@@ -1,0 +1,12 @@
+version: '2'
+services:
+  plex-cleaner:
+    image: nitrikx/plex-cleaner
+    container_name: plex-cleaner
+    environment:
+      # Execute the script every 5 minutes
+      - EXECUTION_CRON_EXPRESSION=*/5 * * * *
+    volumes:
+      - ./config:/config
+      # - ./plexdata:/plexdata
+      # - ./logs:/logs
