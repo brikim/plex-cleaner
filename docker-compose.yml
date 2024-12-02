@@ -1,12 +1,23 @@
-version: '2'
+---
 services:
   plex-cleaner:
-    image: nitrikx/plex-cleaner
+    image: plex-cleaner:latest
     container_name: plex-cleaner
+    security_opt:
+      - no-new-privileges:true
     environment:
-      # Execute the script every 5 minutes
-      - EXECUTION_CRON_EXPRESSION=*/5 * * * *
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Chicago
+      #- EXECUTION_CRON_EXPRESSION=ONCE
+      - EXECUTION_CRON_EXPRESSION=0 */2 * * *
+      #- "CONFIG_PATH_FILE="
+      - "ENABLED_DELETE_WATCHED_TV=1"
+      - "ENABLED_MOVE_LIVE_TV=1"
+      - "ENABLED_DELETE_OLD_TV=1"
     volumes:
-      - ./config:/config
-      # - ./plexdata:/plexdata
-      # - ./logs:/logs
+      - /docker/plex-cleaner/config:/config
+      - /docker/plex-cleaner/logs:/logs
+      - /media:/media
+      - /recorded-tv:/recorded_tv
+    restart: unless-stopped

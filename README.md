@@ -1,58 +1,59 @@
-# Plex-Cleaner Docker
-
-[![Build docker image](https://github.com/NitriKx/docker-Plex-Cleaner/actions/workflows/build-image.yml/badge.svg)](https://github.com/NitriKx/docker-Plex-Cleaner/actions/workflows/build-image.yml)
-
-Dokerized version of [ngovil21/Plex-Cleaner](https://github.com/ngovil21/Plex-Cleaner)
+# Plex-Cleaner
 
 ## First run 
 
 ```
-docker pull nitrikx/plex-cleaner
-docker run -ti -v /path/to/config/folder:/config nitrikx/plex-cleaner
+run docker compose on example compose.yml
 ```
 
-## Testing 
+## Environment Variables
 
+EXECUTION_CRON_EXPRESSION
 ```
-docker run -ti -v /path/to/config/folder:/config nitrikx/plex-cleaner --test
-```
-
-## Execution frequency
-
-```
-# Run every 4 hours
-docker run -ti -v /path/to/config/folder:/config -e "EXECUTION_CRON_EXPRESSION=0 */4 * * *" nitrikx/plex-cleaner
+# Run every 2 hours
+EXECUTION_CRON_EXPRESSION=0 */2 * * *
 
 # Run once
-docker run -ti -v /path/to/config/folder:/config -e "EXECUTION_CRON_EXPRESSION=ONCE" nitrikx/plex-cleaner
-````
-
-## `--reload_encoding`
-
-If you need to pass the `--reload_encoding` parameter, you could do something like this
-```
-docker run -ti -v /path/to/config/folder:/config nitrikx/plex-cleaner --reload_encoding
+EXECUTION_CRON_EXPRESSION=ONCE
 ```
 
-## plex_delete = false
-
-If you want to delete the file without passing by the Plex Web API, you need to mount your plex data directory:
-
+CONFIG_PATH_FILE (Not required)
 ```
-docker run -ti -v /path/to/config/folder:/config -v /path/to/plex/folder:/plexdata nitrikx/plex-cleaner
+# default
+CONFIG_PATH_FILE=/config/config.conf
 ```
 
-and then adjust your configuration:
-
+ENABLED_DELETE_WATCHED_TV
 ```
-...
-    "default_location": "/plexdata",
-...
+# enable the delete watched tv script
+ENABLED_DELETE_WATCHED_TV=1
+
+# disable the delete watched tv script
+ENABLED_DELETE_WATCHED_TV=0
+```
+
+ENABLED_MOVE_LIVE_TV
+```
+# enable the move live tv script
+ENABLED_MOVE_LIVE_TV=1
+
+# disable the move live tv script
+ENABLED_MOVE_LIVE_TV=0
+```
+
+ENABLED_DELETE_OLD_TV
+```
+# enable the delete old tv script
+ENABLED_DELETE_OLD_TV=1
+
+# disable the delete old tv script
+ENABLED_DELETE_OLD_TV=0
 ```
 
 ## Logs
 
 You can also export the logs by mounting a volume on `/logs`:
 ```
-docker run -ti -v /path/to/config/folder:/config -v /path/to/logs/folder:/logs nitrikx/plex-cleaner
+volumes:
+    /logPath:/logs
 ```
