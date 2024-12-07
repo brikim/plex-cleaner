@@ -18,6 +18,7 @@ import json
 from datetime import datetime
 
 scriptEnabled = False
+scriptName = 'MoveLiveTv'
 conf_loc_path_file = ''
 plex_grab_folder = ''
 move_to_folder = ''
@@ -58,9 +59,9 @@ def move_file(filePath):
         shutil.move(correctedFilePath, newFileLocation)
         if change_owner == True:
             os.chown(newFileLocation, change_owner_uid, change_owner_gid)
-        sys.stdout.write("Moved {} to folder {}\n".format(correctedFilePath, newFileLocation))
+        sys.stdout.write("{}: Moved {} to folder {}\n".format(scriptName, correctedFilePath, newFileLocation))
     except Exception as e:
-        sys.stderr.write("Error moving file {}: {0}.\n".format(correctedFilePath, e))
+        sys.stderr.write("{}: Error moving file {}: {}.\n".format(scriptName, correctedFilePath, e))
 
 if scriptEnabled == True:
     runScript = True
@@ -81,10 +82,10 @@ if scriptEnabled == True:
                     change_owner_gid = config['change_owner_gid']
                 else:
                     change_owner = False
-                    sys.stdout.write("LIVE_TV_CHANGE_OWNER set to TRUE but OS has no chown operation. Disabling Owner Change\n")
+                    sys.stdout.write("{}: LIVE_TV_CHANGE_OWNER set to TRUE but OS has no chown operation. Disabling Owner Change\n".format(scriptName))
             
         except Exception as e:
-            sys.stderr.write("MoveLiveTv: ERROR Reading Config file {}\n".format(e))   
+            sys.stderr.write("{}: ERROR Reading Config file {}\n".format(scriptName, e))
             runScript = False
     else:
         runScript = False
@@ -97,4 +98,4 @@ if scriptEnabled == True:
                 if hoursSincePlay >= move_time_hours:
                     move_file(file)
                 else:
-                    sys.stdout.write("Pending Move. File modified {:.1f} hours ago will move at {} hours. {}\n".format(hoursSincePlay, move_time_hours, file))
+                    sys.stdout.write("{}: Pending Move. File modified {:.1f} hours ago will move at {} hours. {}\n".format(scriptName, hoursSincePlay, move_time_hours, file))

@@ -9,14 +9,10 @@ ENV ENABLED_DELETE_WATCHED_TV='1'
 ENV ENABLED_MOVE_LIVE_TV='1'
 ENV ENABLED_DELETE_OLD_TV='1'
 
-RUN apk update && apk add bash && apk add --no-cache python3 py3-pip py3-requests tzdata && mkdir /app && mkdir /logs && mkdir /etc/cron.d
+RUN apk upgrade --no-cache && apk add --no-cache bash python3 py3-pip py3-requests tzdata && mkdir /app && mkdir /logs && mkdir /etc/cron.d
 
 # Add the scripts 
-COPY run-entry.sh /app/run-entry.sh
-COPY run-plexcleaner.sh /app/run-plexcleaner.sh
-COPY deleteWatchedTv.py /app/deleteWatchedTv.py
-COPY moveLiveTv.py /app/moveLiveTv.py
-COPY deleteOldTv.py /app/deleteOldTv.py
+COPY scripts/ /app/
 COPY logrotate.conf /etc/logrotate.d/plexcleaner.conf
 
 RUN chmod 777 /app/run-entry.sh && chmod 777 /app/run-plexcleaner.sh && chmod 777 /app/deleteWatchedTv.py && chmod 777 /app/moveLiveTv.py && chmod 777 /app/deleteOldTv.py && chmod 644 /etc/logrotate.d/plexcleaner.conf && ln -sf /usr/share/zoneinfo/$TZ /etc/localtime

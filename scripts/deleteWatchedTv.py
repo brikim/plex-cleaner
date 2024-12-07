@@ -16,6 +16,7 @@ import os
 import json
 from datetime import datetime
 from dataclasses import dataclass
+from pathlib import Path
 
 @dataclass
 class LibraryInfo:
@@ -25,11 +26,16 @@ class LibraryInfo:
     plexLibraryId: str
 
 scriptEnabled = False
+scriptName = 'DeleteWatchedTv'
 conf_loc_path_file = ''
-plex_url = ''
-plex_api_key = ''
 tautulli_url = ''
 tautulli_api_key = ''
+plex_url = ''
+plex_api_key = ''
+plex_valid = True
+emby_url = ''
+emby_api_key = ''
+emby_valid = True
 library_list = []
 library_path = []
 libraries = []
@@ -60,7 +66,7 @@ def setup_libraries():
                     lib.plexLibraryId = tautLib['section_id']
 
     except Exception as e:
-        sys.stderr.write("Tautulli API 'get_libraries' request failed: {0}.\n".format(e))
+        sys.stderr.write("{}: Tautulli API 'get_libraries' request failed: {}.\n".format(scriptName, e))
         pass
 
 def get_filename(key):
@@ -82,7 +88,7 @@ def get_filename(key):
             return ""
 
     except Exception as e:
-        sys.stderr.write("Tautulli API 'get_metadata' request failed: {0}.\n".format(e))
+        sys.stderr.write("{}: Tautulli API 'get_metadata' request failed: {}.\n".format(scriptName, e))
         pass
 
 def find_watched_shows(user, library):
@@ -108,29 +114,37 @@ def find_watched_shows(user, library):
                     if hoursSincePlay >= delete_time_hours:
                         returnFileNames.append(fileName.replace(library.plexPath, library.physicalPath))
                     else:
-                        sys.stdout.write("Pending Delete. File watched {:.1f} hours ago will delete at {} hours. {}\n".format(hoursSincePlay, delete_time_hours, fileName))
+                        sys.stdout.write("{}: Pending Delete. File watched {:.1f} hours ago will delete at {} hours. {}\n".format(scriptName, hoursSincePlay, delete_time_hours, fileName))
         
         return returnFileNames
 
     except Exception as e:
-        sys.stderr.write("Tautulli API 'get_history' request failed: {0}.\n".format(e))
+        sys.stderr.write("{}: Tautulli API 'get_history' request failed: {}.\n".format(scriptName, e))
+
+def delete_empty_folders(path):
+    # Delete empty folders in physical path if any exist
+    for lib in libraries:
+        folderRemoved = True
+        while folderRemoved == True:
+            folderRemoved = False
+            for dirpath, dirnames, filenames in os.walk(path, topdown=False):
+                if not dirnames and not filenames:
+                    os.rmdir(dirpath)
+                    folderRemoved = True
 
 if scriptEnabled == True:
     if os.path.exists(conf_loc_path_file) == True:
-        try:
-            goodConfigRead = True
+        goodConfigRead = True
             
+        try:
             # Opening JSON file
             f = open(conf_loc_path_file, 'r')
 
             # returns JSON object as a dictionary
             data = json.load(f)
             
-            plex_url = data['plex_url']
-            plex_api_key = data['plex_api_key']
             tautulli_url = data['tautulli_url']
             tautulli_api_key = data['tautulli_api_key']
-            
             config = data['delete_watched_shows']
             delete_time_hours = config['delete_time_hours']
             for user in config['users']:
@@ -138,8 +152,24 @@ if scriptEnabled == True:
             for library in config['libraries']:
                 libraries.append(LibraryInfo(library['plexLibraryName'], library['plexLibraryPath'], library['physicalLibraryPath'], ''))
         except Exception as e:
-            sys.stderr.write("DeleteWatchedTv: ERROR Reading Config file {}\n".format(e))   
+            sys.stderr.write("{}: ERROR Reading Config file {}\n".format(scriptName, e))
             goodConfigRead = False
+
+        try:
+            plex_url = data['plex_url']
+            plex_api_key = data['plex_api_key']
+            if (plex_url == '' or plex_api_key == ''):
+                plex_valid = False
+        except Exception as e:
+            plex_valid = False
+            
+        try:
+            emby_url = data['emby_url']
+            emby_api_key = data['emby_api_key']
+            if emby_url == '' or emby_api_key == '':
+                emby_valid = False
+        except Exception as e:
+            emby_valid = False
         
         if (goodConfigRead == True):
             showsToDelete = []
@@ -151,18 +181,32 @@ if scriptEnabled == True:
             numberOfDeletedShows = 0
             for shows in showsToDelete:
                 for show in shows:
-                    sys.stdout.write("Deleting File: {}\n".format(show))
+                    sys.stdout.write("{}: Deleting File: {}\n".format(scriptName, show))
                     os.remove(show)
                     numberOfDeletedShows = numberOfDeletedShows + 1
             
-            if (numberOfDeletedShows > 0):
-                sys.stdout.write("Notifying Plex to Refresh\n")
-                session = requests.Session()
-                session.verify = False
-
+            if numberOfDeletedShows > 0:
+                # Clean up empty folders in paths
                 for lib in libraries:
+                    delete_empty_folders(lib.physicalPath)
+        
+                if plex_valid == True:
+                    session = requests.Session()
+                    session.verify = False
+
+                    for lib in libraries:
+                        try:
+                            plexCommandUrl = plex_url.rstrip('/') + "/library/sections/" + lib.plexLibraryId + "/refresh?path=" + lib.plexPath + "&X-Plex-Token=" + plex_api_key
+                            session.get(plexCommandUrl, headers={"Accept":"application/json"})
+                            sys.stdout.write("{}: Notifying Plex to Refresh\n".format(scriptName))
+                        except Exception as e:
+                            sys.stderr.write("{}: Plex API 'sections refresh' request failed: {}.\n".format(scriptName, e))
+
+                if emby_valid == True:
                     try:
-                        plexCommandUrl = plex_url + "/library/sections/" + lib.plexLibraryId + "/refresh?path=" + lib.plexPath + "&X-Plex-Token=" + plex_api_key
-                        session.get(plexCommandUrl, headers={"Accept":"application/json"})
+                        embyRefreshUrl = emby_url.rstrip('/') + '/emby/Library/Refresh?api_key=' + emby_api_key
+                        embyResponse = requests.post(embyRefreshUrl)
+                        sys.stdout.write("{}: Notifying Emby to Refresh\n".format(scriptName))
                     except Exception as e:
-                        sys.stderr.write("Plex API 'sections refresh' request failed: {0}.\n".format(e))
+                            sys.stderr.write("{}: Emby API 'library refresh' request failed: {}.\n".format(scriptName, e))
+                
