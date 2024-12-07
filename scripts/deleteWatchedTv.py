@@ -17,6 +17,7 @@ import json
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
+from deleteEmptyFolders import delete_empty_folders
 
 @dataclass
 class LibraryInfo:
@@ -121,17 +122,6 @@ def find_watched_shows(user, library):
     except Exception as e:
         sys.stderr.write("{}: Tautulli API 'get_history' request failed: {}.\n".format(scriptName, e))
 
-def delete_empty_folders(path):
-    # Delete empty folders in physical path if any exist
-    for lib in libraries:
-        folderRemoved = True
-        while folderRemoved == True:
-            folderRemoved = False
-            for dirpath, dirnames, filenames in os.walk(path, topdown=False):
-                if not dirnames and not filenames:
-                    os.rmdir(dirpath)
-                    folderRemoved = True
-
 if scriptEnabled == True:
     if os.path.exists(conf_loc_path_file) == True:
         goodConfigRead = True
@@ -187,9 +177,11 @@ if scriptEnabled == True:
             
             if numberOfDeletedShows > 0:
                 # Clean up empty folders in paths
+                checkEmptyFolderPaths = []
                 for lib in libraries:
-                    delete_empty_folders(lib.physicalPath)
-        
+                    checkEmptyFolderPaths.append(lib.physicalPath)
+                delete_empty_folders(checkEmptyFolderPaths)
+                
                 if plex_valid == True:
                     session = requests.Session()
                     session.verify = False

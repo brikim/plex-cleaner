@@ -1,9 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""
-From a config file delete shows that meet a certain criteria
-"""
 from __future__ import print_function
 from __future__ import unicode_literals
 
@@ -14,6 +11,7 @@ import glob
 import requests
 from datetime import datetime
 from dataclasses import dataclass
+from deleteEmptyFolders import delete_empty_folders
 
 @dataclass
 class FileInfo:
@@ -131,17 +129,6 @@ def get_plex_library_id(libName):
         sys.stderr.write("{}: Tautulli API 'get_libraries' request failed: {}.\n".format(scriptName, e))
         pass
 
-def delete_empty_folders(pathsToCheck):
-    # Delete empty folders in physical path if any exist
-    for path in pathsToCheck:
-        folderRemoved = True
-        while folderRemoved == True:
-            folderRemoved = False
-            for dirpath, dirnames, filenames in os.walk(path, topdown=False):
-                if not dirnames and not filenames:
-                    os.rmdir(dirpath)
-                    folderRemoved = True
-
 def notify_plex_refresh(deletedShowLibs):
     plexLibIds = []
     if plex_valid == True:
@@ -195,7 +182,7 @@ if scriptEnabled == True:
                 emby_valid = False
         except Exception as e:
             emby_valid = False
-            
+        
         try:
             physicalPathsToCheckForDelete = []
             plexLibrariesToRefresh = []
