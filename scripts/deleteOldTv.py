@@ -57,22 +57,22 @@ def keep_last_show_delete(path, keepLast):
     fileInfo = get_files_in_path(path)
     if len(fileInfo) > keepLast:
         showsToDelete = len(fileInfo) - keepLast
-        sys.stdout.write("{}: KEEP_LAST - Show {} need to delete {} shows\n".format(scriptName, path, showsToDelete))
+        sys.stdout.write("{}: KEEP_LAST_{} - Show {} has {} episodes\n".format(scriptName, keepLast, path, len(fileInfo)))
         try:
             sortedFileInfo = sorted(fileInfo, key=lambda item: item.ageDays, reverse=True)
             
             deletedShows = 0
             for file in sortedFileInfo:
-                sys.stdout.write("{}: KEEP_LAST - Deleting Show-{}\n".format(scriptName, file.path))
+                sys.stdout.write("{}: KEEP_LAST_{} - Deleting Show-{}\n".format(scriptName, keepLast, file.path))
                 deleteShow(file.path)
                 showsDeleted = True
                 
-                deletedShows = deletedShows + 1
+                deletedShows += 1
                 if deletedShows >= showsToDelete:
                     break
 
         except Exception as e:
-                sys.stderr.write("{}: KEEP_LAST error sorting files {}\n".format(scriptName, e))
+                sys.stderr.write("{}: KEEP_LAST_{} error sorting files {}\n".format(scriptName, keepLast, e))
     
     return showsDeleted
                 
@@ -81,7 +81,7 @@ def keep_show_days(path, keepDays):
     fileInfo = get_files_in_path(path)
     for file in fileInfo:
         if file.ageDays >= keepDays:
-            sys.stdout.write("{}: KEEP_DAYS - Deleting Show-{} Age-{} Older than Keep Days-{}\n".format(scriptName, file.path,file.ageDays,keepDays))
+            sys.stdout.write("{}: KEEP_DAYS_{} - Age-{} Days Deleting Show-{}\n".format(scriptName, keepDays, file.ageDays, file.path))
             deleteShow(file.path)
             showsDeleted = True
     return showsDeleted
@@ -194,7 +194,7 @@ if scriptEnabled == True:
                 for show in deletedShows:
                     plexLibrariesToRefresh.append(show)
             
-            delete_empty_folders(list(set(physicalPathsToCheckForDelete)))
+            delete_empty_folders(list(set(physicalPathsToCheckForDelete)), scriptName)
             notify_plex_refresh(list(set(plexLibrariesToRefresh)))
             if len(plexLibrariesToRefresh) > 0:
                 notify_emby_refresh()

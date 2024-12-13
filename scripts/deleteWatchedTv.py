@@ -21,10 +21,13 @@ from deleteEmptyFolders import delete_empty_folders
 
 @dataclass
 class LibraryInfo:
-    name: str
-    plexPath: str
+    plexLibraryName: str
+    embyLibraryName: str
+    plexContainerPath: str
+    embyContainerPath: str
     physicalPath: str
     plexLibraryId: str
+    embyLibraryId: str
 
 scriptEnabled = False
 scriptName = 'DeleteWatchedTv'
@@ -37,10 +40,14 @@ plex_valid = True
 emby_url = ''
 emby_api_key = ''
 emby_valid = True
+jellystat_url = ''
+jellystat_api_key = ''
+jellystat_valid = True
 library_list = []
 library_path = []
 libraries = []
-user_list = []
+plex_user_list = []
+emby_user_list = []
 delete_time_hours = 24
 
 if "ENABLED_DELETE_WATCHED_TV" in os.environ:
@@ -52,23 +59,38 @@ if "CONFIG_PATH_FILE" in os.environ:
 def get_tautulli_api_url():
     return tautulli_url.rstrip('/') + '/api/v2'
     
-def setup_libraries():
-    payload = {
-        'apikey': tautulli_api_key,
-        'cmd': 'get_libraries'}
+def setup_plex_libraries():
     try:
+        payload = {
+            'apikey': tautulli_api_key,
+            'cmd': 'get_libraries'}
+        
         r = requests.get(get_tautulli_api_url(), params=payload)
         response = r.json()
         res_data = response['response']['data']
         
         for tautLib in res_data:
             for lib in libraries:
-                if (tautLib['section_name'] == lib.name):
+                if (tautLib['section_name'] == lib.plexLibraryName):
                     lib.plexLibraryId = tautLib['section_id']
-
     except Exception as e:
         sys.stderr.write("{}: Tautulli API 'get_libraries' request failed: {}.\n".format(scriptName, e))
-        pass
+        
+def setup_jellystat_libraries():
+    try:
+        headers = {
+            'x-api-token': jellystat_api_key,
+            "Content-Type": "application/json"}
+        payload = {}
+    
+        jellystatR = requests.get(jellystat_url.rstrip('/') + '/api/getLibraries', headers=headers, params=payload)
+        jellystatResponse = jellystatR.json()
+        for jellyLib in jellystatResponse:
+            for lib in libraries:
+                if jellyLib['Name'] == lib.embyLibraryName:
+                    lib.embyLibraryId = jellyLib['Id']
+    except Exception as e:
+        sys.stderr.write("{}: Jellystat API 'get_libraries' request failed: {}.\n".format(scriptName, e))
 
 def get_filename(key):
     # Get the metadata for a media item.
@@ -76,7 +98,6 @@ def get_filename(key):
         'apikey': tautulli_api_key,
         'rating_key': str(key),
         'cmd': 'get_metadata'}
-        #'media_info': True}
 
     try:
         r = requests.get(get_tautulli_api_url(), params=payload)
@@ -92,7 +113,11 @@ def get_filename(key):
         sys.stderr.write("{}: Tautulli API 'get_metadata' request failed: {}.\n".format(scriptName, e))
         pass
 
-def find_watched_shows(user, library):
+def house_since_play(playDateTime):
+    time_difference = datetime.now() - playDateTime
+    return (time_difference.days * 24) + (time_difference.seconds / 3600)
+
+def find_plex_watched_shows(user, library):
     # Get the Tautulli history.
     payload = {
         'apikey': tautulli_api_key,
@@ -110,18 +135,57 @@ def find_watched_shows(user, library):
             if item['watched_status'] == 1:
                 fileName = get_filename(item['rating_key'])
                 if len(fileName) > 0:
-                    time_difference = datetime.now() - datetime.fromtimestamp(item['stopped'])
-                    hoursSincePlay = (time_difference.days * 24) + (time_difference.seconds / 3600)
+                    hoursSincePlay = house_since_play(datetime.fromtimestamp(item['stopped']))
                     if hoursSincePlay >= delete_time_hours:
-                        returnFileNames.append(fileName.replace(library.plexPath, library.physicalPath))
+                        returnFileNames.append(fileName.replace(library.plexContainerPath, library.physicalPath))
                     else:
-                        sys.stdout.write("{}: Pending Delete. File watched {:.1f} hours ago will delete at {} hours. {}\n".format(scriptName, hoursSincePlay, delete_time_hours, fileName))
+                        if hoursSincePlay >= (delete_time_hours * 0.7):
+                            sys.stdout.write("{}: Pending Delete. Plex watched {:.1f} hours ago will delete at {} hours. {}\n".format(scriptName, hoursSincePlay, delete_time_hours, fileName))
         
         return returnFileNames
-
+    
     except Exception as e:
         sys.stderr.write("{}: Tautulli API 'get_history' request failed: {}.\n".format(scriptName, e))
 
+def find_emby_watched_shows(user, library):       
+    headers = {
+        'x-api-token': jellystat_api_key,
+        "Content-Type": "application/json"}
+    
+    payload = {
+        'libraryid': library.embyLibraryId}
+    
+    try:
+        r = requests.post(jellystat_url.rstrip('/') + '/api/getLibraryHistory', headers=headers, data=json.dumps(payload))
+        response = r.json()
+        
+        returnFileNames = []
+        for item in response:
+            if item['UserName'] == user:
+                playbackDuration = int(item['PlaybackDuration'])
+                payload = {
+                    'Id': item['NowPlayingItemId']
+                }
+                detailR = requests.post(jellystat_url.rstrip('/') + '/api/getItemDetails', headers=headers, data=json.dumps(payload))
+                detailResponse = detailR.json()
+                for itemDetail in detailResponse:
+                    playbackPercent = playbackDuration / (int(itemDetail['RunTimeTicks']) / 10000000)
+                    if playbackPercent >= 0.85:
+                        watchDate = datetime.fromisoformat(item['ActivityDateInserted'])
+                        watchDate = watchDate.replace(tzinfo=None)
+                        hoursSincePlay = house_since_play(watchDate)
+                        if hoursSincePlay >= delete_time_hours:
+                            fileName = itemDetail['Path']
+                            returnFileNames.append(fileName.replace(library.embyContainerPath, library.physicalPath))
+                        else:
+                            if hoursSincePlay >= (delete_time_hours * 0.7):
+                                sys.stdout.write("{}: Pending Delete. Emby watched {:.1f} hours ago will delete at {} hours. {}\n".format(scriptName, hoursSincePlay, delete_time_hours, fileName))
+        
+        return returnFileNames
+    
+    except Exception as e:
+        sys.stderr.write("{}: Jellystat API 'GetLibraryHistory' request failed: {}.\n".format(scriptName, e))
+    
 if scriptEnabled == True:
     if os.path.exists(conf_loc_path_file) == True:
         goodConfigRead = True
@@ -138,9 +202,21 @@ if scriptEnabled == True:
             config = data['delete_watched_shows']
             delete_time_hours = config['delete_time_hours']
             for user in config['users']:
-                user_list.append(user['name'])
+                plex_user_list.append(user['plexName'])
+                if jellystat_valid == True and 'embyName' in user:
+                    emby_user_list.append(user['embyName'])
+                else:
+                    jellystat_valid = False
             for library in config['libraries']:
-                libraries.append(LibraryInfo(library['plexLibraryName'], library['plexLibraryPath'], library['physicalLibraryPath'], ''))
+                embyLibraryName = ''
+                embyLibraryPath = ''
+                if ('embyLibraryName' in library) and ('embyContainerPath' in library):
+                    embyLibraryName = library['embyLibraryName']
+                    embyContainerPath = library['embyContainerPath']
+                else:
+                    jellystat_valid = False
+                    
+                libraries.append(LibraryInfo(library['plexLibraryName'], embyLibraryName, library['plexContainerPath'], embyContainerPath, library['physicalLibraryPath'], '', ''))
         except Exception as e:
             sys.stderr.write("{}: ERROR Reading Config file {}\n".format(scriptName, e))
             goodConfigRead = False
@@ -152,7 +228,7 @@ if scriptEnabled == True:
                 plex_valid = False
         except Exception as e:
             plex_valid = False
-            
+        
         try:
             emby_url = data['emby_url']
             emby_api_key = data['emby_api_key']
@@ -161,26 +237,48 @@ if scriptEnabled == True:
         except Exception as e:
             emby_valid = False
         
+        if jellystat_valid == True:
+            try:
+                jellystat_url = data['jellystat_url']
+                jellystat_api_key = data['jellystat_api_key']
+                if jellystat_url == '' or jellystat_api_key == '':
+                    jellystat_valid = False
+            except Exception as e:
+                jellystat_valid = False
+                        
         if (goodConfigRead == True):
             showsToDelete = []
-            setup_libraries()
-            for user in user_list:
+            
+            # Setup plex library ids
+            setup_plex_libraries()
+            
+            # Find plex shows to delete
+            for plexUser in plex_user_list:
                 for lib in libraries:
-                    showsToDelete.append(find_watched_shows(user, lib))
+                    showsToDelete.append(find_plex_watched_shows(plexUser, lib))
+                    
+            # Setup jellystat library ids if valid
+            if jellystat_valid == True:
+                setup_jellystat_libraries()
+                
+                # Find jellystat watched shows
+                for embyUser in emby_user_list:
+                    for lib in libraries:
+                        showsToDelete.append(find_emby_watched_shows(embyUser, lib))
             
             numberOfDeletedShows = 0
             for shows in showsToDelete:
                 for show in shows:
-                    sys.stdout.write("{}: Deleting File: {}\n".format(scriptName, show))
                     os.remove(show)
-                    numberOfDeletedShows = numberOfDeletedShows + 1
+                    sys.stdout.write("{}: Deleted File: {}\n".format(scriptName, show))
+                    numberOfDeletedShows += 1
             
             if numberOfDeletedShows > 0:
                 # Clean up empty folders in paths
                 checkEmptyFolderPaths = []
                 for lib in libraries:
                     checkEmptyFolderPaths.append(lib.physicalPath)
-                delete_empty_folders(checkEmptyFolderPaths)
+                delete_empty_folders(checkEmptyFolderPaths, scriptName)
                 
                 if plex_valid == True:
                     session = requests.Session()
@@ -188,7 +286,7 @@ if scriptEnabled == True:
 
                     for lib in libraries:
                         try:
-                            plexCommandUrl = plex_url.rstrip('/') + "/library/sections/" + lib.plexLibraryId + "/refresh?path=" + lib.plexPath + "&X-Plex-Token=" + plex_api_key
+                            plexCommandUrl = plex_url.rstrip('/') + "/library/sections/" + lib.plexLibraryId + "/refresh?path=" + lib.plexContainerPath + "&X-Plex-Token=" + plex_api_key
                             session.get(plexCommandUrl, headers={"Accept":"application/json"})
                             sys.stdout.write("{}: Notifying Plex to Refresh\n".format(scriptName))
                         except Exception as e:
