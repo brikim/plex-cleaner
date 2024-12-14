@@ -14,7 +14,7 @@ import requests
 import sys
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from deleteEmptyFolders import delete_empty_folders
@@ -113,8 +113,9 @@ def get_filename(key):
         sys.stderr.write("{}: Tautulli API 'get_metadata' request failed: {}.\n".format(scriptName, e))
         pass
 
-def house_since_play(playDateTime):
-    time_difference = datetime.now() - playDateTime
+def hours_since_play(useUtcTime, playDateTime):
+    currentDateTime = datetime.now(timezone.utc) if useUtcTime == True else datetime.now()
+    time_difference = currentDateTime - playDateTime
     return (time_difference.days * 24) + (time_difference.seconds / 3600)
 
 def find_plex_watched_shows(user, library):
@@ -135,7 +136,7 @@ def find_plex_watched_shows(user, library):
             if item['watched_status'] == 1:
                 fileName = get_filename(item['rating_key'])
                 if len(fileName) > 0:
-                    hoursSincePlay = house_since_play(datetime.fromtimestamp(item['stopped']))
+                    hoursSincePlay = hours_since_play(False, datetime.fromtimestamp(item['stopped']))
                     if hoursSincePlay >= delete_time_hours:
                         returnFileNames.append(fileName.replace(library.plexContainerPath, library.physicalPath))
                     else:
@@ -147,39 +148,42 @@ def find_plex_watched_shows(user, library):
     except Exception as e:
         sys.stderr.write("{}: Tautulli API 'get_history' request failed: {}.\n".format(scriptName, e))
 
-def find_emby_watched_shows(user, library):       
-    headers = {
-        'x-api-token': jellystat_api_key,
-        "Content-Type": "application/json"}
-    
+def find_emby_watched_status(userName, id, watchedTimeStr):
     payload = {
-        'libraryid': library.embyLibraryId}
+        'api_key': emby_api_key,
+        'id': id}
+    r = requests.get(emby_url.rstrip('/') + '/emby/user_usage_stats/get_item_stats', params=payload)
+    response = r.json()
+    for userActivity in response:
+        if userActivity['name'] == userName and userActivity['played'] == 'True':
+            return hours_since_play(True, datetime.fromisoformat(watchedTimeStr))
+    return 0.0
     
+def find_emby_watched_shows(library):
     try:
+        headers = {
+            'x-api-token': jellystat_api_key,
+            "Content-Type": "application/json"}
+        payload = {
+            'libraryid': library.embyLibraryId}
         r = requests.post(jellystat_url.rstrip('/') + '/api/getLibraryHistory', headers=headers, data=json.dumps(payload))
         response = r.json()
         
         returnFileNames = []
         for item in response:
-            if item['UserName'] == user:
-                playbackDuration = int(item['PlaybackDuration'])
-                payload = {
-                    'Id': item['NowPlayingItemId']
-                }
-                detailR = requests.post(jellystat_url.rstrip('/') + '/api/getItemDetails', headers=headers, data=json.dumps(payload))
-                detailResponse = detailR.json()
-                for itemDetail in detailResponse:
-                    playbackPercent = playbackDuration / (int(itemDetail['RunTimeTicks']) / 10000000)
-                    if playbackPercent >= 0.85:
-                        watchDate = datetime.fromisoformat(item['ActivityDateInserted'])
-                        watchDate = watchDate.replace(tzinfo=None)
-                        hoursSincePlay = house_since_play(watchDate)
-                        if hoursSincePlay >= delete_time_hours:
-                            fileName = itemDetail['Path']
-                            returnFileNames.append(fileName.replace(library.embyContainerPath, library.physicalPath))
-                        else:
-                            if hoursSincePlay >= (delete_time_hours * 0.7):
-                                sys.stdout.write("{}: Pending Delete. Emby watched {:.1f} hours ago will delete at {} hours. {}\n".format(scriptName, hoursSincePlay, delete_time_hours, fileName))
+            if item['UserName'] in emby_user_list:
+                hoursSincePlay = find_emby_watched_status(item['UserName'], item['NowPlayingItemId'], item['ActivityDateInserted'])
+                if hoursSincePlay >= delete_time_hours:
+                    payload = {
+                        'Id': item['NowPlayingItemId']}
+                    detailR = requests.post(jellystat_url.rstrip('/') + '/api/getItemDetails', headers=headers, data=json.dumps(payload))
+                    detailResponse = detailR.json()
+                    for itemDetail in detailResponse:
+                        fileName = itemDetail['Path']
+                        returnFileNames.append(fileName.replace(library.embyContainerPath, library.physicalPath))
+                else:
+                    if hoursSincePlay >= (delete_time_hours * 0.7):
+                        sys.stdout.write("{}: Pending Delete. Emby watched {:.1f} hours ago will delete at {} hours. {}\n".format(scriptName, hoursSincePlay, delete_time_hours, fileName))
         
         return returnFileNames
     
@@ -258,13 +262,12 @@ if scriptEnabled == True:
                     showsToDelete.append(find_plex_watched_shows(plexUser, lib))
                     
             # Setup jellystat library ids if valid
-            if jellystat_valid == True:
+            if jellystat_valid == True and emby_valid == True:
                 setup_jellystat_libraries()
                 
                 # Find jellystat watched shows
-                for embyUser in emby_user_list:
-                    for lib in libraries:
-                        showsToDelete.append(find_emby_watched_shows(embyUser, lib))
+                for lib in libraries:
+                    showsToDelete.append(find_emby_watched_shows(lib))
             
             numberOfDeletedShows = 0
             for shows in showsToDelete:
