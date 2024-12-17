@@ -269,12 +269,15 @@ if scriptEnabled == True:
                 for lib in libraries:
                     showsToDelete.append(find_emby_watched_shows(lib))
             
-            numberOfDeletedShows = 0
-            for shows in showsToDelete:
-                for show in shows:
-                    os.remove(show)
-                    sys.stdout.write("{}: Deleted File: {}\n".format(scriptName, show))
-                    numberOfDeletedShows += 1
+            try:
+                numberOfDeletedShows = 0
+                for shows in showsToDelete:
+                    for show in shows:
+                        os.remove(show)
+                        sys.stdout.write("{}: Deleted File: {}\n".format(scriptName, show))
+                        numberOfDeletedShows += 1
+            except Exception as e:
+                sys.stderr.write("{}: Error Deleting File {}\n".format(scriptName, e))
             
             if numberOfDeletedShows > 0:
                 # Clean up empty folders in paths
